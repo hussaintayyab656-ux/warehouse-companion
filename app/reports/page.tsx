@@ -1,0 +1,278 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import NavBar from '@/lib/components/NavBar';
+import * as XLSX from 'xlsx';
+
+type Booking = {
+  id: string;
+  ref: string;
+  df_ref: string;
+  booking_date: string;
+  booking_time: string;
+  type: string;
+  status: string;
+  supplier: string;
+  po_number: string | null;
+  warehouse: string;
+  pallets: number;
+  skus: number;
+  quantity: number;
+};
+
+type SortKey = keyof Pick<Booking,
+  'ref' | 'booking_date' | 'booking_time' | 'po_number' | 'supplier' |
+  'warehouse' | 'type' | 'status' | 'pallets' | 'skus' | 'quantity'>;
+
+export default function ReportsPage() {
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [supplierFilter, setSupplierFilter] = useState('all');
+  const [warehouseFilter, setWarehouseFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+
+  const [sortKey, setSortKey] = useState<SortKey>('booking_date');
+  const [sortAsc, setSortAsc] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) {
+        router.replace('/login');
+      } else {
+        setReady(true);
+      }
+    });
+  }, [router]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .order('booking_date', { ascending: true });
+    if (!error && data) setBookings(data as Booking[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (ready) load();
+  }, [ready, load]);
+
+  const suppliers = useMemo(
+    () => Array.from(new Set(bookings.map(b => b.supplier))).sort(),
+    [bookings]
+  );
+  const warehouses = useMemo(
+    () => Array.from(new Set(bookings.map(b => b.warehouse))).sort(),
+    [bookings]
+  );
+
+  const filtered = useMemo(() => {
+    return bookings.filter(b => {
+      if (dateFrom && b.booking_date < dateFrom) return false;
+      if (dateTo && b.booking_date > dateTo) return false;
+      if (supplierFilter !== 'all' && b.supplier !== supplierFilter) return false;
+      if (warehouseFilter !== 'all' && b.warehouse !== warehouseFilter) return false;
+      if (statusFilter !== 'all' && b.status !== statusFilter) return false;
+      if (typeFilter !== 'all' && b.type !== typeFilter) return false;
+      return true;
+    });
+  }, [bookings, dateFrom, dateTo, supplierFilter, warehouseFilter, statusFilter, typeFilter]);
+
+  const sorted = useMemo(() => {
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      const av = a[sortKey] ?? '';
+      const bv = b[sortKey] ?? '';
+      if (av === bv) return 0;
+      const cmp = av > bv ? 1 : -1;
+      return sortAsc ? cmp : -cmp;
+    });
+    return copy;
+  }, [filtered, sortKey, sortAsc]);
+
+  const stats = useMemo(() => {
+    return {
+      totalBookings: filtered.length,
+      totalPallets: filtered.reduce((s, b) => s + (b.pallets || 0), 0),
+      totalSkus: filtered.reduce((s, b) => s + (b.skus || 0), 0),
+      totalQuantity: filtered.reduce((s, b) => s + (b.quantity || 0), 0),
+      delivered: filtered.filter(b => b.status === 'Delivered').length,
+      pending: filtered.filter(b => b.status === 'Pending').length,
+    };
+  }, [filtered]);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortKey(key);
+      setSortAsc(true);
+    }
+  }
+
+  function exportExcel() {
+    const rows = sorted.map(b => ({
+      Reference: b.ref,
+      Date: b.booking_date,
+      Time: b.booking_time,
+      'PO Number': b.po_number || '-',
+      Supplier: b.supplier,
+      Warehouse: b.warehouse,
+      Type: b.type,
+      Status: b.status,
+      Pallets: b.pallets,
+      SKUs: b.skus,
+      Quantity: b.quantity,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Supplier Bookings');
+    XLSX.writeFile(wb, `supplier-bookings-${dateFrom || 'all'}-to-${dateTo || 'all'}.xlsx`);
+  }
+
+  function typeBadgeClass(type: string) {
+    if (type === 'Deliveries') return 'bg-blue-100 text-blue-800';
+    if (type === 'Collections') return 'bg-purple-100 text-purple-800';
+    return 'bg-amber-100 text-amber-800';
+  }
+
+  function statusBadgeClass(status: string) {
+    return status === 'Delivered'
+      ? 'bg-green-100 text-green-800'
+      : 'bg-slate-200 text-slate-800';
+  }
+
+  if (!ready) return null;
+  if (loading) return <div className="p-8">Loading...</div>;
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <NavBar />
+      <div className="max-w-7xl mx-auto p-6">
+        <h1 className="text-2xl font-bold text-slate-800 mb-4">Export &amp; Reports</h1>
+
+        <div className="bg-white rounded-lg shadow p-4 mb-6 grid grid-cols-2 md:grid-cols-6 gap-3">
+          <div>
+            <label className="text-xs text-slate-600">From</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600">To</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600">Supplier</label>
+            <select value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm">
+              <option value="all">All</option>
+              {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600">Warehouse</label>
+            <select value={warehouseFilter} onChange={e => setWarehouseFilter(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm">
+              <option value="all">All</option>
+              {warehouses.map(w => <option key={w} value={w}>{w}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600">Status</label>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm">
+              <option value="all">All</option>
+              <option value="Pending">Pending</option>
+              <option value="Delivered">Delivered</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600">Type</label>
+            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm">
+              <option value="all">All</option>
+              <option value="Deliveries">Deliveries</option>
+              <option value="Collections">Collections</option>
+              <option value="Courier">Courier</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+          {[
+            ['Total Bookings', stats.totalBookings],
+            ['Pallets', stats.totalPallets],
+            ['SKUs', stats.totalSkus],
+            ['Quantity', stats.totalQuantity],
+            ['Delivered', stats.delivered],
+            ['Pending', stats.pending],
+          ].map(([label, val]) => (
+            <div key={label as string} className="bg-white rounded-lg shadow p-3 text-center">
+              <div className="text-xl font-bold text-slate-800">{val}</div>
+              <div className="text-xs text-slate-500">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-between items-center mb-3">
+          <div className="text-sm text-slate-600">{sorted.length} record(s)</div>
+          <button onClick={exportExcel}
+            className="bg-slate-800 text-white text-sm px-4 py-2 rounded hover:bg-slate-700">
+            Export to Excel
+          </button>
+        </div>
+
+        <div className="bg-white rounded-lg shadow overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-100">
+              <tr>
+                {([
+                  ['ref', 'Reference'], ['booking_date', 'Date'], ['booking_time', 'Time'],
+                  ['po_number', 'PO Number'], ['supplier', 'Supplier'], ['warehouse', 'Warehouse'],
+                  ['type', 'Type'], ['status', 'Status'], ['pallets', 'Pallets'],
+                  ['skus', 'SKUs'], ['quantity', 'Qty'],
+                ] as [SortKey, string][]).map(([key, label]) => (
+                  <th key={key} onClick={() => toggleSort(key)}
+                    className="text-left px-3 py-2 cursor-pointer select-none whitespace-nowrap">
+                    {label}{sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(b => (
+                <tr key={b.id} className="border-t">
+                  <td className="px-3 py-2">{b.ref}</td>
+                  <td className="px-3 py-2">{b.booking_date}</td>
+                  <td className="px-3 py-2">{b.booking_time}</td>
+                  <td className="px-3 py-2">{b.po_number || '-'}</td>
+                  <td className="px-3 py-2">{b.supplier}</td>
+                  <td className="px-3 py-2">{b.warehouse}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded text-xs ${typeBadgeClass(b.type)}`}>{b.type}</span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded text-xs ${statusBadgeClass(b.status)}`}>{b.status}</span>
+                  </td>
+                  <td className="px-3 py-2">{b.pallets}</td>
+                  <td className="px-3 py-2">{b.skus}</td>
+                  <td className="px-3 py-2">{b.quantity}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
