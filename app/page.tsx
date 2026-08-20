@@ -54,7 +54,7 @@ export default function HomePage() {
 
       <div className="bg-gradient-to-b from-navy to-[#2a2a2a] px-6 py-14 text-center">
         <h1 className="text-3xl font-semibold text-white">
-          Welcome back, <span className="text-gold">{name}</span>
+          Welcome back, <span className="text-gold uppercase">{name}</span>
         </h1>
         <p className="mt-2 text-sm text-slate-300">
           Select a module to get started
