@@ -77,3 +77,12 @@ export async function deleteBooking(id: string): Promise<void> {
   const { error } = await supabase.from("bookings").delete().eq("id", id);
   if (error) throw error;
 }
+
+export async function getBlockedDates(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("blocked_dates")
+    .select("blocked_date");
+
+  if (error) throw error;
+  return (data ?? []).map((d) => d.blocked_date as string);
+}

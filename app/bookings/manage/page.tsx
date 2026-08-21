@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import {
   deleteBooking,
+  getBlockedDates,
   getBookingsForDate,
   getSuppliers,
   markDelivered,
@@ -41,6 +42,7 @@ export default function ManageBookingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
+  const [blockedDates, setBlockedDates] = useState<string[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -53,6 +55,12 @@ export default function ManageBookingsPage() {
     getSuppliers()
       .then(setSuppliers)
       .catch(() => setSuppliers([]));
+  }, []);
+
+  useEffect(() => {
+    getBlockedDates()
+      .then(setBlockedDates)
+      .catch(() => setBlockedDates([]));
   }, []);
 
   const load = useCallback(async () => {
@@ -81,6 +89,8 @@ export default function ManageBookingsPage() {
     await deleteBooking(b.id);
     load();
   }
+
+  const isBlocked = blockedDates.includes(date);
 
   const totals = bookings.reduce(
     (acc, b) => ({
@@ -118,7 +128,8 @@ export default function ManageBookingsPage() {
                   setEditing(null);
                   setFormOpen(true);
                 }}
-                className="rounded-md bg-gold px-3 py-2 text-sm font-semibold text-navy hover:bg-gold-hover"
+                disabled={isBlocked}
+                className="rounded-md bg-gold px-3 py-2 text-sm font-semibold text-navy hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Add booking
               </button>
@@ -154,6 +165,12 @@ export default function ManageBookingsPage() {
             </button>
           </div>
 
+          {isBlocked && (
+            <div className="mt-4 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+              This date is blocked for bookings. No new bookings can be added.
+            </div>
+          )}
+
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               ["Bookings", bookings.length],
@@ -187,15 +204,17 @@ export default function ManageBookingsPage() {
                 <p className="text-sm text-slate-600">
                   No bookings for this day.
                 </p>
-                <button
-                  onClick={() => {
-                    setEditing(null);
-                    setFormOpen(true);
-                  }}
-                  className="mt-3 rounded-md bg-gold px-3 py-2 text-sm font-semibold text-navy hover:bg-gold-hover"
-                >
-                  Add the first booking
-                </button>
+                {!isBlocked && (
+                  <button
+                    onClick={() => {
+                      setEditing(null);
+                      setFormOpen(true);
+                    }}
+                    className="mt-3 rounded-md bg-gold px-3 py-2 text-sm font-semibold text-navy hover:bg-gold-hover"
+                  >
+                    Add the first booking
+                  </button>
+                )}
               </div>
             ) : (
               <ul className="divide-y divide-slate-200">

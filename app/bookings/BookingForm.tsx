@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createBooking, updateBooking } from "@/lib/bookings";
+import { createBooking, getBlockedDates, updateBooking } from "@/lib/bookings";
 import {
   BOOKING_STATUSES,
   BOOKING_TYPES,
@@ -51,6 +51,7 @@ export default function BookingForm({
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [blockedDates, setBlockedDates] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -82,14 +83,26 @@ export default function BookingForm({
     }
   }, [open, booking, defaultDate]);
 
+  useEffect(() => {
+    if (!open) return;
+    getBlockedDates()
+      .then(setBlockedDates)
+      .catch(() => setBlockedDates([]));
+  }, [open]);
+
   if (!open) return null;
 
   const shortNotice = isShortNotice(date, time || null);
   const num = (v: string) => (v.trim() === "" ? null : Number(v));
+  const isBlocked = blockedDates.includes(date);
 
   async function save() {
     if (!supplier.trim()) {
       setError("Pick a supplier before saving.");
+      return;
+    }
+    if (isBlocked) {
+      setError("This date is blocked for bookings. Choose another date.");
       return;
     }
     setSaving(true);
@@ -269,7 +282,13 @@ export default function BookingForm({
             />
           </div>
 
-          {shortNotice && (
+          {isBlocked && (
+            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 sm:col-span-2">
+              This date is blocked for bookings. Please choose a different date.
+            </div>
+          )}
+
+          {shortNotice && !isBlocked && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 sm:col-span-2">
               Less than 72 hours away. This will be saved as short notice.
             </div>
@@ -291,7 +310,7 @@ export default function BookingForm({
           </button>
           <button
             onClick={save}
-            disabled={saving}
+            disabled={saving || isBlocked}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
             {saving ? "Saving…" : booking ? "Save changes" : "Create booking"}

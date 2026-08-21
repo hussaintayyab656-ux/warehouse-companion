@@ -3,9 +3,11 @@
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
+import { useRequireAuth } from '@/lib/useAuth';
 
 export default function NavBar() {
   const router = useRouter();
+  const { role } = useRequireAuth();
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -28,6 +30,11 @@ export default function NavBar() {
           <Link href="/reports" className="text-sm text-white hover:text-gold">
             Reports
           </Link>
+          {role === 'admin' && (
+            <Link href="/admin" className="text-sm text-white hover:text-gold">
+              Admin
+            </Link>
+          )}
           <button
             onClick={signOut}
             className="ml-2 text-sm bg-gold text-navy px-3 py-1.5 rounded font-semibold hover:bg-gold-hover"
