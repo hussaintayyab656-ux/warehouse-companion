@@ -42,6 +42,12 @@ export default function HomePage() {
       desc: "Generate reports and export data to Excel",
       emoji: "📈",
     },
+    {
+      href: "/stock-count",
+      title: "Stock Count",
+      desc: "Count and reconcile Bond and Fab Bond stock",
+      emoji: "🧮",
+    },
   ];
 
   return (

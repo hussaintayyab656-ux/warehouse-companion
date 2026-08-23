@@ -30,6 +30,9 @@ export default function NavBar() {
           <Link href="/reports" className="text-sm text-white hover:text-gold">
             Reports
           </Link>
+          <Link href="/stock-count" className="text-sm text-white hover:text-gold">
+            Stock Count
+          </Link>
           {role === 'admin' && (
             <Link href="/admin" className="text-sm text-white hover:text-gold">
               Admin
