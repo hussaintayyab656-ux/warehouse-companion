@@ -140,8 +140,8 @@ export default function ReportsPage() {
   }
 
   function typeBadgeClass(type: string) {
-    if (type === 'Deliveries') return 'bg-blue-100 text-blue-800';
-    if (type === 'Collections') return 'bg-purple-100 text-purple-800';
+    if (type === 'Delivery' || type === 'Deliveries') return 'bg-blue-100 text-blue-800';
+    if (type === 'Collection' || type === 'Collections') return 'bg-purple-100 text-purple-800';
     return 'bg-amber-100 text-amber-800';
   }
 
