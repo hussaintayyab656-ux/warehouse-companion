@@ -5,17 +5,34 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
+function Flap({ ch }: { ch: string }) {
+  return (
+    <span className="relative mx-[1px] inline-flex h-8 w-6 items-center justify-center rounded-[3px] bg-[#141414] font-mono text-lg font-bold text-[#ffb000] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:h-10 sm:w-7 sm:text-2xl">
+      {ch === " " ? "\u00A0" : ch}
+      <span className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-black/60" />
+    </span>
+  );
+}
+
+function SplitFlap({ text }: { text: string }) {
+  return (
+    <div className="flex flex-wrap justify-center">
+      {text.split("").map((ch, i) => (
+        <Flap key={i} ch={ch} />
+      ))}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [name, setName] = useState<string>("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) {
         router.replace("/login");
       } else {
-        setName(data.session.user.email?.split("@")[0] ?? "there");
         setReady(true);
       }
     });
@@ -24,66 +41,76 @@ export default function HomePage() {
   if (!ready) return null;
 
   const modules = [
-    {
-      href: "/bookings",
-      title: "Supplier Bookings",
-      desc: "Manage supplier orders and delivery schedules",
-      emoji: "📋",
-    },
-    {
-      href: "/dashboard",
-      title: "Dashboard",
-      desc: "View real-time metrics and warehouse overview",
-      emoji: "📊",
-    },
-    {
-      href: "/reports",
-      title: "Export & Reports",
-      desc: "Generate reports and export data to Excel",
-      emoji: "📈",
-    },
-    {
-      href: "/stock-count",
-      title: "Stock Count",
-      desc: "Count and reconcile Bond and Fab Bond stock",
-      emoji: "🧮",
-    },
+    { title: "SUPPLIER BOOKINGS", desc: "Orders & delivery schedules", href: "/bookings" },
+    { title: "DASHBOARD", desc: "Real-time metrics overview", href: "/dashboard" },
+    { title: "EXPORT & REPORTS", desc: "Excel exports & reports", href: "/reports" },
+    { title: "STOCK COUNT", desc: "Bond & Fab Bond reconciliation", href: "/stock-count" },
+    { title: "BOND STOCK", desc: "Boutique · Alcohol/LR · Cigarettes", href: "/bondstock" },
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b bg-navy">
-        <div className="mx-auto max-w-7xl flex items-center justify-between px-6 py-3">
-          <p className="text-lg font-bold text-gold">Warehouse Companion</p>
+    <div className="min-h-screen bg-[#0a0a0a]">
+      {/* Terminal-style top bar */}
+      <header className="border-b border-[#ffb000]/20 bg-[#111]">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3">
+          <p className="font-mono text-sm font-bold tracking-[0.15em] text-[#ffb000]">
+            I.F.R
+          </p>
+          <p className="font-mono text-[10px] tracking-[0.25em] text-slate-500">
+            BOND DEPARTMENT
+          </p>
         </div>
       </header>
 
-      <div className="bg-gradient-to-b from-navy to-[#2a2a2a] px-6 py-14 text-center">
-        <h1 className="text-3xl font-semibold text-white">
-          Welcome back, <span className="text-gold uppercase">{name}</span>
-        </h1>
-        <p className="mt-2 text-sm text-slate-300">
-          Select a module to get started
+      {/* Split-flap hero */}
+      <div className="border-b border-[#ffb000]/10 bg-[#0d0d0d] px-6 py-10 text-center">
+        <SplitFlap text="WELCOME BACK" />
+        <div className="mt-2">
+          <SplitFlap text="I.F.R  BOND DEPT" />
+        </div>
+        <p className="mt-5 font-mono text-[11px] tracking-[0.2em] text-slate-500">
+          SELECT A MODULE BELOW
         </p>
       </div>
 
-      <div className="mx-auto -mt-8 max-w-5xl px-6 pb-16">
-        <div className="grid gap-6 sm:grid-cols-3">
+      {/* Departures board list */}
+      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+        <div className="grid grid-cols-[1fr_auto] gap-x-4 border-b border-[#ffb000]/20 pb-2 font-mono text-[10px] tracking-[0.2em] text-slate-500 sm:grid-cols-[1fr_180px_100px]">
+          <span>MODULE</span>
+          <span className="hidden sm:block">DETAIL</span>
+          <span className="text-right">STATUS</span>
+        </div>
+
+        <div className="divide-y divide-white/5">
           {modules.map((m) => (
             <Link
               key={m.href}
               href={m.href}
-              className="group rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm transition hover:-translate-y-1 hover:border-gold hover:shadow-lg"
+              className="group grid grid-cols-[1fr_auto] items-center gap-x-4 py-4 transition hover:bg-[#ffb000]/[0.04] sm:grid-cols-[1fr_180px_100px]"
             >
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-navy text-2xl transition group-hover:bg-gold">
-                {m.emoji}
-              </div>
-              <h2 className="text-lg font-semibold text-navy">{m.title}</h2>
-              <p className="mt-2 text-sm text-slate-600">{m.desc}</p>
+              <span>
+                <span className="block font-mono text-sm tracking-wide text-white transition group-hover:text-[#ffb000]">
+                  {m.title}
+                </span>
+                <span className="block text-xs text-slate-500 sm:hidden">
+                  {m.desc}
+                </span>
+              </span>
+              <span className="hidden font-mono text-xs text-slate-500 sm:block">
+                {m.desc}
+              </span>
+              <span className="flex items-center justify-end gap-1.5 font-mono text-[11px] tracking-wider text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                READY
+              </span>
             </Link>
           ))}
         </div>
       </div>
+
+      <p className="pb-8 text-center font-mono text-[10px] tracking-[0.2em] text-slate-700">
+        WAREHOUSE COMPANION · BOND DEPARTMENT
+      </p>
     </div>
   );
 }

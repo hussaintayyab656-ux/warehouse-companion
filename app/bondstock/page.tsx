@@ -2,19 +2,19 @@ import Link from "next/link";
 
 const categories = [
   {
-    href: "/bond-stock/boutique",
+    href: "/bondstock/boutique/list",
     title: "Boutique",
     emoji: "🛍️",
     desc: "Boutique items — SKUs, pallets, labels",
   },
   {
-    href: "/bond-stock/lr",
+    href: "/bondstock/bond-alcohol",
     title: "Alcohol / LR",
     emoji: "🍾",
     desc: "Liquor & spirits items",
   },
   {
-    href: "/bond-stock/cigarettes",
+    href: "/bondstock/bond-cigarettes",
     title: "Cigarettes / CC",
     emoji: "🚬",
     desc: "Cigarettes & tobacco items",
