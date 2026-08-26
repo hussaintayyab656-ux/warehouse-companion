@@ -34,41 +34,45 @@ export default function BookingsHubPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b bg-navy">
+    <div className="min-h-screen bg-black font-mono">
+      <header className="border-b border-amber-900/40 bg-black">
         <div className="mx-auto max-w-7xl flex items-center justify-between px-6 py-3">
-          <p className="text-lg font-bold text-gold">Warehouse Companion</p>
+          <p className="text-lg font-bold tracking-widest text-amber-400">
+            WAREHOUSE COMPANION
+          </p>
           <Link
             href="/"
-            className="text-sm text-white hover:text-gold"
+            className="text-sm tracking-widest text-slate-400 hover:text-amber-400 transition-colors"
           >
-            ← Back to Home
+            ← BACK TO HOME
           </Link>
         </div>
       </header>
 
-      <div className="bg-gradient-to-b from-navy to-[#2a2a2a] px-6 py-14 text-center">
-        <h1 className="text-3xl font-semibold text-white">
-          📋 Supplier Bookings
+      <div className="px-6 py-14 text-center">
+        <h1 className="text-3xl tracking-[0.2em] text-amber-400">
+          📋 SUPPLIER BOOKINGS
         </h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm tracking-wide text-slate-400">
           Manage supplier orders and delivery schedules
         </p>
       </div>
 
-      <div className="mx-auto -mt-8 max-w-3xl px-6 pb-16">
+      <div className="mx-auto -mt-4 max-w-3xl px-6 pb-16">
         <div className="grid gap-6 sm:grid-cols-2">
           {cards.map((c) => (
             <Link
               key={c.href}
               href={c.href}
-              className="group rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm transition hover:-translate-y-1 hover:border-gold hover:shadow-lg"
+              className="group rounded-xl border border-amber-900/40 bg-black p-8 text-center transition hover:-translate-y-1 hover:border-amber-500/60 hover:bg-amber-950/10"
             >
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-navy text-2xl transition group-hover:bg-gold">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-amber-500/10 text-2xl transition group-hover:bg-amber-500/20">
                 {c.emoji}
               </div>
-              <h2 className="text-lg font-semibold text-navy">{c.title}</h2>
-              <p className="mt-2 text-sm text-slate-600">{c.desc}</p>
+              <h2 className="text-lg font-semibold tracking-wide text-amber-300">
+                {c.title}
+              </h2>
+              <p className="mt-2 text-sm text-slate-400">{c.desc}</p>
             </Link>
           ))}
         </div>
