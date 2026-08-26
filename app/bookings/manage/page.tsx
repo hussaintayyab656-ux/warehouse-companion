@@ -32,6 +32,11 @@ const statusBadge: Record<string, string> = {
   Delivered: "bg-emerald-100 text-emerald-800",
 };
 
+function isWeekend(dateStr: string) {
+  const day = new Date(dateStr + "T00:00:00").getDay();
+  return day === 0 || day === 6; // Sunday = 0, Saturday = 6
+}
+
 export default function ManageBookingsPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -90,7 +95,9 @@ export default function ManageBookingsPage() {
     load();
   }
 
-  const isBlocked = blockedDates.includes(date);
+  const weekend = isWeekend(date);
+  const manuallyBlocked = blockedDates.includes(date);
+  const isBlocked = manuallyBlocked || weekend;
 
   const totals = bookings.reduce(
     (acc, b) => ({
@@ -166,8 +173,14 @@ export default function ManageBookingsPage() {
           </div>
 
           {isBlocked && (
-            <div className="mt-4 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
-              This date is blocked for bookings. No new bookings can be added.
+            <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-semibold">This date is blocked.</p>
+              <p className="mt-0.5 text-amber-800">
+                Reason: {weekend ? "Weekend — automatically blocked" : "Manually blocked"}
+              </p>
+              <p className="mt-1 text-amber-800">
+                New bookings cannot be added, but existing bookings are shown below.
+              </p>
             </div>
           )}
 
