@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 import { useRequireAuth } from "@/lib/useAuth";
 
 function Flap({ ch }: { ch: string }) {
@@ -22,8 +24,28 @@ function SplitFlap({ text }: { text: string }) {
   );
 }
 
+type EventItem = {
+  id: string;
+  title: string;
+  message: string;
+  event_date: string;
+};
+
 export default function HomePage() {
   const { checking, role } = useRequireAuth();
+  const [todaysEvents, setTodaysEvents] = useState<EventItem[]>([]);
+
+  useEffect(() => {
+    async function loadEvents() {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data } = await supabase
+        .from("events")
+        .select("id, title, message, event_date")
+        .eq("event_date", today);
+      setTodaysEvents(data ?? []);
+    }
+    loadEvents();
+  }, []);
 
   if (checking) return null;
 
@@ -47,11 +69,37 @@ export default function HomePage() {
           <p className="font-mono text-sm font-bold tracking-[0.15em] text-[#ffb000]">
             I.F.R
           </p>
-          <p className="font-mono text-[10px] tracking-[0.25em] text-slate-500">
-            BOND DEPARTMENT
-          </p>
+          <div className="flex items-center gap-4">
+            {role === "admin" && (
+              <Link
+                href="/admin"
+                className="font-mono text-[10px] tracking-[0.2em] text-[#ffb000] hover:text-white"
+              >
+                ADMIN
+              </Link>
+            )}
+            <p className="font-mono text-[10px] tracking-[0.25em] text-slate-500">
+              BOND DEPARTMENT
+            </p>
+          </div>
         </div>
       </header>
+
+      {todaysEvents.length > 0 && (
+        <div className="mx-auto max-w-4xl px-4 pt-6 sm:px-6">
+          {todaysEvents.map((ev) => (
+            <div
+              key={ev.id}
+              className="mb-3 rounded-lg border border-[#ffb000]/40 bg-[#ffb000]/[0.08] px-4 py-3 font-mono"
+            >
+              <p className="text-xs font-bold tracking-[0.15em] text-[#ffb000]">
+                ⚠ TODAY — {ev.title.toUpperCase()}
+              </p>
+              <p className="mt-1 text-sm text-slate-300">{ev.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="border-b border-[#ffb000]/10 bg-[#0d0d0d] px-6 py-10 text-center">
         <SplitFlap text="WELCOME BACK" />
