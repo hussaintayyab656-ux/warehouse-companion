@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
+import { useRequireAuth } from "@/lib/useAuth";
 
 function Flap({ ch }: { ch: string }) {
   return (
@@ -25,22 +23,11 @@ function SplitFlap({ text }: { text: string }) {
 }
 
 export default function HomePage() {
-  const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const { checking, role } = useRequireAuth();
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        router.replace("/login");
-      } else {
-        setReady(true);
-      }
-    });
-  }, [router]);
+  if (checking) return null;
 
-  if (!ready) return null;
-
-  const modules = [
+  const allModules = [
     { title: "SUPPLIER BOOKINGS", desc: "Orders & delivery schedules", href: "/bookings" },
     { title: "DASHBOARD", desc: "Real-time metrics overview", href: "/dashboard" },
     { title: "EXPORT & REPORTS", desc: "Excel exports & reports", href: "/reports" },
@@ -48,9 +35,13 @@ export default function HomePage() {
     { title: "BOND STOCK", desc: "Boutique · Alcohol/LR · Cigarettes", href: "/bondstock" },
   ];
 
+  const modules =
+    role === "limited"
+      ? allModules.filter((m) => m.href === "/bookings")
+      : allModules;
+
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
-      {/* Terminal-style top bar */}
       <header className="border-b border-[#ffb000]/20 bg-[#111]">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3">
           <p className="font-mono text-sm font-bold tracking-[0.15em] text-[#ffb000]">
@@ -62,7 +53,6 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Split-flap hero */}
       <div className="border-b border-[#ffb000]/10 bg-[#0d0d0d] px-6 py-10 text-center">
         <SplitFlap text="WELCOME BACK" />
         <div className="mt-2">
@@ -73,7 +63,6 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* Departures board list */}
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
         <div className="grid grid-cols-[1fr_auto] gap-x-4 border-b border-[#ffb000]/20 pb-2 font-mono text-[10px] tracking-[0.2em] text-slate-500 sm:grid-cols-[1fr_180px_100px]">
           <span>MODULE</span>

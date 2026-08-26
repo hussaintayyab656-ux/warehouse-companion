@@ -12,17 +12,23 @@ export function useRequireAuth() {
   useEffect(() => {
     async function check() {
       const { data } = await supabase.auth.getSession();
-      if (!data.session) {
+
+      const tabVerified = sessionStorage.getItem('tab_verified');
+
+      if (!data.session || !tabVerified) {
+        await supabase.auth.signOut();
         router.push('/login');
-      } else {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', data.session.user.id)
-          .single();
-        setRole(profile?.role ?? 'user');
-        setChecking(false);
+        return;
       }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.session.user.id)
+        .single();
+
+      setRole(profile?.role ?? 'user');
+      setChecking(false);
     }
     check();
   }, [router]);
