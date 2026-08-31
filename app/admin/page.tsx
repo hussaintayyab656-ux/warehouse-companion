@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import { useRequireAuth } from "@/lib/useAuth";
 
@@ -36,6 +37,12 @@ export default function AdminPage() {
   const [newEventDate, setNewEventDate] = useState("");
   const [savingEvent, setSavingEvent] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
+
+  // PO Data Upload state
+  const [poFile, setPoFile] = useState<File | null>(null);
+  const [poUploading, setPoUploading] = useState(false);
+  const [poError, setPoError] = useState<string | null>(null);
+  const [poResult, setPoResult] = useState<string | null>(null);
 
   useEffect(() => {
     if (!checking && role !== "admin") {
@@ -117,6 +124,100 @@ export default function AdminPage() {
     if (!confirm("Remove this event/reminder?")) return;
     await supabase.from("events").delete().eq("id", id);
     loadEvents();
+  }
+
+  // Helper: find a column value from a row using several possible header names
+  function pick(row: Record<string, unknown>, names: string[]): string {
+    for (const key of Object.keys(row)) {
+      const normalized = key.trim().toLowerCase().replace(/[\s_]/g, "");
+      for (const name of names) {
+        if (normalized === name) {
+          const val = row[key];
+          return val === undefined || val === null ? "" : String(val).trim();
+        }
+      }
+    }
+    return "";
+  }
+
+  async function handlePoUpload() {
+    if (!poFile) return;
+    setPoUploading(true);
+    setPoError(null);
+    setPoResult(null);
+
+    try {
+      const buffer = await poFile.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, {
+        defval: "",
+      });
+
+      if (rawRows.length === 0) {
+        setPoError("No rows found in the file.");
+        setPoUploading(false);
+        return;
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+
+      const rows = rawRows
+        .map((r) => {
+          const po_number = pick(r, ["ponumber", "po", "ponum", "purchaseorder"]);
+          const sku = pick(r, ["sku", "code", "productcode"]);
+          const description = pick(r, ["description", "desc", "productdescription"]);
+          const quantityStr = pick(r, ["quantity", "qty", "osqty", "o/sqty"]);
+          const warehouse = pick(r, ["warehouse", "wh"]);
+          const supplier = pick(r, ["supplier", "suppliername", "suppliersreference"]);
+          const deliveryDateRaw = pick(r, ["deliverydate", "reqdeldate", "date"]);
+          const status = pick(r, ["status", "otif"]) || "Pending";
+
+          const quantity = quantityStr ? Number(quantityStr) : null;
+
+          let delivery_date: string | null = null;
+          if (deliveryDateRaw) {
+            const d = new Date(deliveryDateRaw);
+            if (!isNaN(d.getTime())) {
+              delivery_date = d.toISOString().slice(0, 10);
+            }
+          }
+
+          return {
+            po_number,
+            sku: sku || null,
+            description: description || null,
+            quantity: quantity !== null && !isNaN(quantity) ? quantity : null,
+            warehouse: warehouse || null,
+            supplier: supplier || null,
+            delivery_date,
+            status,
+            upload_batch_date: today,
+          };
+        })
+        .filter((r) => r.po_number);
+
+      if (rows.length === 0) {
+        setPoError(
+          "Couldn't find a PO number column in this file. Check the file's headers."
+        );
+        setPoUploading(false);
+        return;
+      }
+
+      const { error } = await supabase.from("po_data").insert(rows);
+
+      if (error) {
+        setPoError(error.message);
+      } else {
+        setPoResult(`Uploaded ${rows.length} rows for ${today}.`);
+        setPoFile(null);
+      }
+    } catch {
+      setPoError("Couldn't read this file. Make sure it's a valid .xlsx or .csv file.");
+    }
+
+    setPoUploading(false);
   }
 
   if (checking || role !== "admin") return null;
@@ -307,6 +408,38 @@ export default function AdminPage() {
               ))
             )}
           </div>
+        </div>
+
+        {/* PO Data Upload Section */}
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-navy">PO Data Upload</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Upload the PO file from TRS whenever a new one arrives (.xlsx or
+            .csv). Each upload is saved as a new snapshot — old data is
+            kept, not overwritten, so you can see history for a PO over
+            time.
+          </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => setPoFile(e.target.files?.[0] ?? null)}
+              className="text-sm"
+            />
+            <button
+              onClick={handlePoUpload}
+              disabled={poUploading || !poFile}
+              className="rounded-md bg-gold px-4 py-2 text-sm font-semibold text-navy hover:bg-gold-hover disabled:opacity-50"
+            >
+              {poUploading ? "Uploading…" : "Upload"}
+            </button>
+          </div>
+
+          {poError && <p className="mt-2 text-sm text-red-700">{poError}</p>}
+          {poResult && (
+            <p className="mt-2 text-sm text-green-700">{poResult}</p>
+          )}
         </div>
 
         {/* Team Members Section */}

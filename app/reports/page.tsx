@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import NavBar from '@/lib/components/NavBar';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 type Booking = {
   id: string;
@@ -26,6 +28,23 @@ type SortKey = keyof Pick<Booking,
   'ref' | 'booking_date' | 'booking_time' | 'po_number' | 'supplier' |
   'warehouse' | 'type' | 'status' | 'pallets' | 'skus' | 'quantity'>;
 
+function startOfWeek(d: Date) {
+  const date = new Date(d);
+  const day = date.getDay(); // 0 = Sunday
+  const diff = day === 0 ? -6 : 1 - day; // move back to Monday
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function toISODate(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
 export default function ReportsPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -41,6 +60,8 @@ export default function ReportsPage() {
 
   const [sortKey, setSortKey] = useState<SortKey>('booking_date');
   const [sortAsc, setSortAsc] = useState(true);
+
+  const [summaryPeriod, setSummaryPeriod] = useState<'week' | 'month'>('week');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -110,6 +131,44 @@ export default function ReportsPage() {
     };
   }, [filtered]);
 
+  // Manager Summary: This Week / This Month, independent of the filters above
+  const managerSummary = useMemo(() => {
+    const now = new Date();
+    const periodStart =
+      summaryPeriod === 'week' ? startOfWeek(now) : startOfMonth(now);
+    const periodStartStr = toISODate(periodStart);
+    const todayStr = toISODate(now);
+
+    const periodBookings = bookings.filter(
+      b => b.booking_date >= periodStartStr && b.booking_date <= todayStr
+    );
+
+    const totalPallets = periodBookings.reduce((s, b) => s + (b.pallets || 0), 0);
+    const delivered = periodBookings.filter(b => b.status === 'Delivered');
+    const pending = periodBookings.filter(b => b.status === 'Pending');
+    const deliveredPallets = delivered.reduce((s, b) => s + (b.pallets || 0), 0);
+    const pendingPallets = pending.reduce((s, b) => s + (b.pallets || 0), 0);
+
+    const supplierCounts = new Map<string, number>();
+    periodBookings.forEach(b => {
+      supplierCounts.set(b.supplier, (supplierCounts.get(b.supplier) || 0) + 1);
+    });
+    const supplierFrequency = Array.from(supplierCounts.entries())
+      .sort((a, b) => b[1] - a[1]);
+
+    return {
+      periodStartStr,
+      todayStr,
+      totalBookings: periodBookings.length,
+      totalPallets,
+      deliveredCount: delivered.length,
+      deliveredPallets,
+      pendingCount: pending.length,
+      pendingPallets,
+      supplierFrequency,
+    };
+  }, [bookings, summaryPeriod]);
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
       setSortAsc(!sortAsc);
@@ -139,6 +198,71 @@ export default function ReportsPage() {
     XLSX.writeFile(wb, `supplier-bookings-${dateFrom || 'all'}-to-${dateTo || 'all'}.xlsx`);
   }
 
+  function exportSummaryExcel() {
+    const summaryRows = [
+      { Metric: 'Period', Value: `${managerSummary.periodStartStr} to ${managerSummary.todayStr}` },
+      { Metric: 'Total Bookings', Value: managerSummary.totalBookings },
+      { Metric: 'Total Pallets', Value: managerSummary.totalPallets },
+      { Metric: 'Delivered (Bookings)', Value: managerSummary.deliveredCount },
+      { Metric: 'Delivered (Pallets)', Value: managerSummary.deliveredPallets },
+      { Metric: 'Pending (Bookings)', Value: managerSummary.pendingCount },
+      { Metric: 'Pending (Pallets)', Value: managerSummary.pendingPallets },
+    ];
+    const supplierRows = managerSummary.supplierFrequency.map(([supplier, count]) => ({
+      Supplier: supplier,
+      'Deliveries This Period': count,
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(supplierRows), 'Supplier Frequency');
+    XLSX.writeFile(wb, `manager-summary-${summaryPeriod}-${managerSummary.todayStr}.xlsx`);
+  }
+
+  function exportSummaryPDF() {
+    const doc = new jsPDF();
+    const periodLabel = summaryPeriod === 'week' ? 'Weekly' : 'Monthly';
+
+    doc.setFontSize(16);
+    doc.text('Warehouse Companion - Manager Summary', 14, 18);
+    doc.setFontSize(11);
+    doc.text(
+      `${periodLabel} Report: ${managerSummary.periodStartStr} to ${managerSummary.todayStr}`,
+      14,
+      26
+    );
+
+    autoTable(doc, {
+      startY: 34,
+      head: [['Metric', 'Value']],
+      body: [
+        ['Total Bookings', String(managerSummary.totalBookings)],
+        ['Total Pallets', String(managerSummary.totalPallets)],
+        ['Delivered (Bookings)', String(managerSummary.deliveredCount)],
+        ['Delivered (Pallets)', String(managerSummary.deliveredPallets)],
+        ['Pending (Bookings)', String(managerSummary.pendingCount)],
+        ['Pending (Pallets)', String(managerSummary.pendingPallets)],
+      ],
+    });
+
+    const afterFirstTable = (
+      doc as unknown as { lastAutoTable: { finalY: number } }
+    ).lastAutoTable.finalY;
+
+    doc.setFontSize(12);
+    doc.text('Supplier Delivery Frequency', 14, afterFirstTable + 12);
+
+    autoTable(doc, {
+      startY: afterFirstTable + 16,
+      head: [['Supplier', 'Deliveries This Period']],
+      body: managerSummary.supplierFrequency.map(([supplier, count]) => [
+        supplier,
+        String(count),
+      ]),
+    });
+
+    doc.save(`manager-summary-${summaryPeriod}-${managerSummary.todayStr}.pdf`);
+  }
+
   function typeBadgeClass(type: string) {
     if (type === 'Delivery' || type === 'Deliveries') return 'bg-blue-100 text-blue-800';
     if (type === 'Collection' || type === 'Collections') return 'bg-purple-100 text-purple-800';
@@ -159,6 +283,102 @@ export default function ReportsPage() {
       <NavBar />
       <div className="max-w-7xl mx-auto p-6">
         <h1 className="text-2xl font-bold text-slate-800 mb-4">Export &amp; Reports</h1>
+
+        {/* Manager Summary Section */}
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h2 className="text-lg font-semibold text-slate-800">Manager Summary</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex rounded-md overflow-hidden border border-slate-300">
+                <button
+                  onClick={() => setSummaryPeriod('week')}
+                  className={`px-3 py-1.5 text-sm ${
+                    summaryPeriod === 'week'
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-white text-slate-600'
+                  }`}
+                >
+                  This Week
+                </button>
+                <button
+                  onClick={() => setSummaryPeriod('month')}
+                  className={`px-3 py-1.5 text-sm ${
+                    summaryPeriod === 'month'
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-white text-slate-600'
+                  }`}
+                >
+                  This Month
+                </button>
+              </div>
+              <button
+                onClick={exportSummaryExcel}
+                className="bg-slate-800 text-white text-sm px-3 py-1.5 rounded hover:bg-slate-700"
+              >
+                Export Excel
+              </button>
+              <button
+                onClick={exportSummaryPDF}
+                className="bg-red-700 text-white text-sm px-3 py-1.5 rounded hover:bg-red-800"
+              >
+                Export PDF
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500 mb-4">
+            {managerSummary.periodStartStr} to {managerSummary.todayStr}
+          </p>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+            <div className="bg-slate-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-slate-800">{managerSummary.totalBookings}</div>
+              <div className="text-xs text-slate-500">Bookings</div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-slate-800">{managerSummary.totalPallets}</div>
+              <div className="text-xs text-slate-500">Total Pallets</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-green-700">{managerSummary.deliveredPallets}</div>
+              <div className="text-xs text-slate-500">
+                Pallets Delivered ({managerSummary.deliveredCount})
+              </div>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-amber-700">{managerSummary.pendingPallets}</div>
+              <div className="text-xs text-slate-500">
+                Pallets Pending ({managerSummary.pendingCount})
+              </div>
+            </div>
+          </div>
+
+          <h3 className="text-sm font-semibold text-slate-700 mb-2">
+            Supplier Delivery Frequency
+          </h3>
+          {managerSummary.supplierFrequency.length === 0 ? (
+            <p className="text-sm text-slate-500">No bookings in this period.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="text-left px-3 py-2">Supplier</th>
+                    <th className="text-left px-3 py-2">Deliveries This Period</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {managerSummary.supplierFrequency.map(([supplier, count]) => (
+                    <tr key={supplier} className="border-t">
+                      <td className="px-3 py-2">{supplier}</td>
+                      <td className="px-3 py-2">{count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         <div className="bg-white rounded-lg shadow p-4 mb-6 grid grid-cols-2 md:grid-cols-6 gap-3">
           <div>
