@@ -50,6 +50,7 @@ export default function ReportsPage() {
   const [ready, setReady] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [grvPoSet, setGrvPoSet] = useState<Set<string>>(new Set());
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -87,6 +88,30 @@ export default function ReportsPage() {
     if (ready) load();
   }, [ready, load]);
 
+  // Check which bookings already have a matching GRV record
+  useEffect(() => {
+    async function loadGrvStatus() {
+      const poNumbers = bookings
+        .map((b) => b.po_number)
+        .filter((po): po is string => Boolean(po));
+
+      if (poNumbers.length === 0) {
+        setGrvPoSet(new Set());
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('grv_records')
+        .select('po_no')
+        .in('po_no', poNumbers);
+
+      if (!error && data) {
+        setGrvPoSet(new Set(data.map((r: any) => r.po_no)));
+      }
+    }
+    loadGrvStatus();
+  }, [bookings]);
+
   const suppliers = useMemo(
     () => Array.from(new Set(bookings.map(b => b.supplier))).sort(),
     [bookings]
@@ -121,6 +146,12 @@ export default function ReportsPage() {
   }, [filtered, sortKey, sortAsc]);
 
   const stats = useMemo(() => {
+    const grvMissing = filtered.filter(
+      (b) =>
+        b.status === 'Delivered' &&
+        (!b.po_number || !grvPoSet.has(b.po_number)),
+    ).length;
+
     return {
       totalBookings: filtered.length,
       totalPallets: filtered.reduce((s, b) => s + (b.pallets || 0), 0),
@@ -128,8 +159,9 @@ export default function ReportsPage() {
       totalQuantity: filtered.reduce((s, b) => s + (b.quantity || 0), 0),
       delivered: filtered.filter(b => b.status === 'Delivered').length,
       pending: filtered.filter(b => b.status === 'Pending').length,
+      grvMissing,
     };
-  }, [filtered]);
+  }, [filtered, grvPoSet]);
 
   // Manager Summary: This Week / This Month, independent of the filters above
   const managerSummary = useMemo(() => {
@@ -148,6 +180,9 @@ export default function ReportsPage() {
     const pending = periodBookings.filter(b => b.status === 'Pending');
     const deliveredPallets = delivered.reduce((s, b) => s + (b.pallets || 0), 0);
     const pendingPallets = pending.reduce((s, b) => s + (b.pallets || 0), 0);
+    const grvMissingCount = delivered.filter(
+      (b) => !b.po_number || !grvPoSet.has(b.po_number),
+    ).length;
 
     const supplierCounts = new Map<string, number>();
     periodBookings.forEach(b => {
@@ -165,9 +200,10 @@ export default function ReportsPage() {
       deliveredPallets,
       pendingCount: pending.length,
       pendingPallets,
+      grvMissingCount,
       supplierFrequency,
     };
-  }, [bookings, summaryPeriod]);
+  }, [bookings, summaryPeriod, grvPoSet]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -176,6 +212,12 @@ export default function ReportsPage() {
       setSortKey(key);
       setSortAsc(true);
     }
+  }
+
+  function grvStatusLabel(b: Booking) {
+    if (b.status !== 'Delivered') return '-';
+    const has = b.po_number ? grvPoSet.has(b.po_number) : false;
+    return has ? 'Received' : 'Missing';
   }
 
   function exportExcel() {
@@ -191,6 +233,7 @@ export default function ReportsPage() {
       Pallets: b.pallets,
       SKUs: b.skus,
       Quantity: b.quantity,
+      'GRV Status': grvStatusLabel(b),
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -207,6 +250,7 @@ export default function ReportsPage() {
       { Metric: 'Delivered (Pallets)', Value: managerSummary.deliveredPallets },
       { Metric: 'Pending (Bookings)', Value: managerSummary.pendingCount },
       { Metric: 'Pending (Pallets)', Value: managerSummary.pendingPallets },
+      { Metric: 'GRV Missing (Delivered)', Value: managerSummary.grvMissingCount },
     ];
     const supplierRows = managerSummary.supplierFrequency.map(([supplier, count]) => ({
       Supplier: supplier,
@@ -241,6 +285,7 @@ export default function ReportsPage() {
         ['Delivered (Pallets)', String(managerSummary.deliveredPallets)],
         ['Pending (Bookings)', String(managerSummary.pendingCount)],
         ['Pending (Pallets)', String(managerSummary.pendingPallets)],
+        ['GRV Missing (Delivered)', String(managerSummary.grvMissingCount)],
       ],
     });
 
@@ -273,6 +318,12 @@ export default function ReportsPage() {
     return status === 'Delivered'
       ? 'bg-green-100 text-green-800'
       : 'bg-slate-200 text-slate-800';
+  }
+
+  function grvBadgeClass(b: Booking) {
+    if (b.status !== 'Delivered') return 'bg-slate-100 text-slate-400';
+    const has = b.po_number ? grvPoSet.has(b.po_number) : false;
+    return has ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800';
   }
 
   if (!ready) return null;
@@ -330,7 +381,7 @@ export default function ReportsPage() {
             {managerSummary.periodStartStr} to {managerSummary.todayStr}
           </p>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-5">
             <div className="bg-slate-50 rounded-lg p-3 text-center">
               <div className="text-xl font-bold text-slate-800">{managerSummary.totalBookings}</div>
               <div className="text-xs text-slate-500">Bookings</div>
@@ -350,6 +401,10 @@ export default function ReportsPage() {
               <div className="text-xs text-slate-500">
                 Pallets Pending ({managerSummary.pendingCount})
               </div>
+            </div>
+            <div className="bg-red-50 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-red-700">{managerSummary.grvMissingCount}</div>
+              <div className="text-xs text-slate-500">GRV Missing</div>
             </div>
           </div>
 
@@ -428,7 +483,7 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mb-6">
           {[
             ['Total Bookings', stats.totalBookings],
             ['Pallets', stats.totalPallets],
@@ -436,9 +491,12 @@ export default function ReportsPage() {
             ['Quantity', stats.totalQuantity],
             ['Delivered', stats.delivered],
             ['Pending', stats.pending],
+            ['GRV Missing', stats.grvMissing],
           ].map(([label, val]) => (
             <div key={label as string} className="bg-white rounded-lg shadow p-3 text-center">
-              <div className="text-xl font-bold text-slate-800">{val}</div>
+              <div className={`text-xl font-bold ${label === 'GRV Missing' && (val as number) > 0 ? 'text-red-600' : 'text-slate-800'}`}>
+                {val}
+              </div>
               <div className="text-xs text-slate-500">{label}</div>
             </div>
           ))}
@@ -467,6 +525,7 @@ export default function ReportsPage() {
                     {label}{sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : ''}
                   </th>
                 ))}
+                <th className="text-left px-3 py-2 whitespace-nowrap">GRV</th>
               </tr>
             </thead>
             <tbody>
@@ -487,6 +546,11 @@ export default function ReportsPage() {
                   <td className="px-3 py-2">{b.pallets}</td>
                   <td className="px-3 py-2">{b.skus}</td>
                   <td className="px-3 py-2">{b.quantity}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded text-xs ${grvBadgeClass(b)}`}>
+                      {grvStatusLabel(b)}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
