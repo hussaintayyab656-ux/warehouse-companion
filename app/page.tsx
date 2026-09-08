@@ -52,6 +52,7 @@ export default function HomePage() {
   const allModules = [
     { title: "SUPPLIER BOOKINGS", desc: "Orders & delivery schedules", href: "/bookings" },
     { title: "DASHBOARD", desc: "Real-time metrics overview", href: "/dashboard" },
+    { title: "GRV", desc: "Goods received voucher digitization", href: "/grv" },
     { title: "EXPORT & REPORTS", desc: "Excel exports & reports", href: "/reports" },
     { title: "STOCK COUNT", desc: "Bond & Fab Bond reconciliation", href: "/stock-count" },
     { title: "BOND STOCK", desc: "Boutique · Alcohol/LR · Cigarettes", href: "/bondstock" },
