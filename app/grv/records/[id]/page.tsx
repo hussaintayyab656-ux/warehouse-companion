@@ -3,7 +3,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../../lib/supabase";
 
@@ -25,11 +25,13 @@ type GrvRecord = {
 
 export default function GrvDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [record, setRecord] = useState<GrvRecord | null>(null);
   const [items, setItems] = useState<GrvItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (id) fetchDetail();
@@ -54,6 +56,28 @@ export default function GrvDetailPage() {
     setLoading(false);
   };
 
+  const handleDelete = async () => {
+    const confirmed = confirm(
+      `Delete this GRV (${record?.po_no} / ${record?.grv_batch_no})? This will remove all ${items.length} item(s) and cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+
+    await supabase.from("grv_items").delete().eq("grv_record_id", id);
+    await supabase.from("delivery_advice").delete().eq("grv_record_id", id);
+    const { error } = await supabase.from("grv_records").delete().eq("id", id);
+
+    setDeleting(false);
+
+    if (error) {
+      alert("Could not delete: " + error.message);
+      return;
+    }
+
+    router.push("/grv/records");
+  };
+
   if (loading) {
     return (
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
@@ -71,13 +95,41 @@ export default function GrvDetailPage() {
         ← Back to records
       </Link>
 
-      <h1 style={{ fontSize: 20, fontWeight: 600, marginTop: 12 }}>
-        {record?.po_no} / {record?.grv_batch_no}
-      </h1>
-      <p style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-        {record?.supplier_name} · {record?.date_received} · Received by{" "}
-        {record?.received_by || "-"}
-      </p>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginTop: 12,
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 600 }}>
+            {record?.po_no} / {record?.grv_batch_no}
+          </h1>
+          <p style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
+            {record?.supplier_name} · {record?.date_received} · Received by{" "}
+            {record?.received_by || "-"}
+          </p>
+        </div>
+
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 6,
+            border: "1px solid #c0392b",
+            color: "#c0392b",
+            background: "white",
+            cursor: deleting ? "not-allowed" : "pointer",
+            fontSize: 13,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {deleting ? "Deleting..." : "Delete GRV"}
+        </button>
+      </div>
 
       <table
         style={{
