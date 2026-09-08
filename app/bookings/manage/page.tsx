@@ -48,6 +48,7 @@ export default function ManageBookingsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
   const [blockedDates, setBlockedDates] = useState<string[]>([]);
+  const [grvPoSet, setGrvPoSet] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -83,6 +84,30 @@ export default function ManageBookingsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Check which of today's bookings already have a matching GRV record
+  useEffect(() => {
+    async function loadGrvStatus() {
+      const poNumbers = bookings
+        .map((b) => b.po_number)
+        .filter((po): po is string => Boolean(po));
+
+      if (poNumbers.length === 0) {
+        setGrvPoSet(new Set());
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("grv_records")
+        .select("po_no")
+        .in("po_no", poNumbers);
+
+      if (!error && data) {
+        setGrvPoSet(new Set(data.map((r: any) => r.po_no)));
+      }
+    }
+    loadGrvStatus();
+  }, [bookings]);
 
   async function onMarkDelivered(b: Booking) {
     await markDelivered(b.id);
@@ -231,78 +256,92 @@ export default function ManageBookingsPage() {
               </div>
             ) : (
               <ul className="divide-y divide-slate-200">
-                {bookings.map((b) => (
-                  <li key={b.id} className="px-4 py-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-navy">
-                            {b.ref}
-                          </span>
-                          <span className="font-mono text-sm text-slate-700">
-                            {displayTime(b.booking_time)}
-                          </span>
-                          <span
-                            className={`rounded px-2 py-0.5 text-xs font-medium ${typeBadge[b.type] ?? "bg-slate-100 text-slate-700"}`}
-                          >
-                            {b.type}
-                          </span>
-                          <span
-                            className={`rounded px-2 py-0.5 text-xs font-medium ${statusBadge[b.status] ?? "bg-slate-100 text-slate-700"}`}
-                          >
-                            {b.status}
-                          </span>
-                          {b.short_notice && (
-                            <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-                              Short notice
+                {bookings.map((b) => {
+                  const hasGrv = b.po_number ? grvPoSet.has(b.po_number) : false;
+                  return (
+                    <li key={b.id} className="px-4 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-sm font-semibold text-navy">
+                              {b.ref}
                             </span>
+                            <span className="font-mono text-sm text-slate-700">
+                              {displayTime(b.booking_time)}
+                            </span>
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs font-medium ${typeBadge[b.type] ?? "bg-slate-100 text-slate-700"}`}
+                            >
+                              {b.type}
+                            </span>
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs font-medium ${statusBadge[b.status] ?? "bg-slate-100 text-slate-700"}`}
+                            >
+                              {b.status}
+                            </span>
+                            {b.short_notice && (
+                              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                                Short notice
+                              </span>
+                            )}
+                            {b.status === "Delivered" && (
+                              hasGrv ? (
+                                <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                                  ✓ GRV Received
+                                </span>
+                              ) : (
+                                <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                                  ⚠ GRV Missing
+                                </span>
+                              )
+                            )}
+                          </div>
+                          <p className="mt-1 truncate text-sm font-medium text-slate-900">
+                            {b.supplier}
+                          </p>
+                          <p className="mt-0.5 text-sm text-slate-600">
+                            <span className="font-mono">
+                              {b.po_number || "-"}
+                            </span>{" "}
+                            · {b.warehouse} · {b.pallets ?? 0} pallets ·{" "}
+                            {b.skus ?? 0} SKUs · {b.quantity ?? 0} qty
+                          </p>
+                          {b.notes && (
+                            <p className="mt-1 text-sm text-slate-700">
+                              {b.notes}
+                            </p>
                           )}
                         </div>
-                        <p className="mt-1 truncate text-sm font-medium text-slate-900">
-                          {b.supplier}
-                        </p>
-                        <p className="mt-0.5 text-sm text-slate-600">
-                          <span className="font-mono">
-                            {b.po_number || "-"}
-                          </span>{" "}
-                          · {b.warehouse} · {b.pallets ?? 0} pallets ·{" "}
-                          {b.skus ?? 0} SKUs · {b.quantity ?? 0} qty
-                        </p>
-                        {b.notes && (
-                          <p className="mt-1 text-sm text-slate-700">
-                            {b.notes}
-                          </p>
-                        )}
-                      </div>
 
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        <button
-                          onClick={() => {
-                            setEditing(b);
-                            setFormOpen(true);
-                          }}
-                          className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                        >
-                          Edit
-                        </button>
-                        {b.status === "Pending" && (
+                        <div className="flex shrink-0 flex-wrap gap-2">
                           <button
-                            onClick={() => onMarkDelivered(b)}
-                            className="rounded-md border border-emerald-300 px-2.5 py-1.5 text-xs text-emerald-800 hover:bg-emerald-50"
+                            onClick={() => {
+                              setEditing(b);
+                              setFormOpen(true);
+                            }}
+                            className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                           >
-                            Mark delivered
+                            Edit
                           </button>
-                        )}
-                        <button
-                          onClick={() => onDelete(b)}
-                          className="rounded-md border border-red-300 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
+                          {b.status === "Pending" && (
+                            <button
+                              onClick={() => onMarkDelivered(b)}
+                              className="rounded-md border border-emerald-300 px-2.5 py-1.5 text-xs text-emerald-800 hover:bg-emerald-50"
+                            >
+                              Mark delivered
+                            </button>
+                          )}
+                          <button
+                            onClick={() => onDelete(b)}
+                            className="rounded-md border border-red-300 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
