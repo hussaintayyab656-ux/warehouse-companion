@@ -18,6 +18,7 @@ type GrvItem = {
     date_received: string;
     supplier_name: string;
     warehouse: string;
+    received_by: string;
   };
 };
 
@@ -36,7 +37,7 @@ export default function GrvListPage() {
       .from("grv_items")
       .select(
         `id, item_code, description, received_qty, short_qty, expiry_date,
-         grv_records ( grv_batch_no, po_no, date_received, supplier_name, warehouse )`
+         grv_records ( grv_batch_no, po_no, date_received, supplier_name, warehouse, received_by )`
       )
       .order("id", { ascending: false })
       .limit(200);
@@ -86,6 +87,7 @@ export default function GrvListPage() {
               <th style={{ padding: 6 }}>Date</th>
               <th style={{ padding: 6 }}>Qty</th>
               <th style={{ padding: 6 }}>Expiry</th>
+              <th style={{ padding: 6 }}>Received By</th>
               <th style={{ padding: 6 }}>PO / GRV</th>
             </tr>
           </thead>
@@ -98,6 +100,7 @@ export default function GrvListPage() {
                 <td style={{ padding: 6 }}>{it.grv_records?.date_received}</td>
                 <td style={{ padding: 6 }}>{it.received_qty}</td>
                 <td style={{ padding: 6 }}>{it.expiry_date || "-"}</td>
+                <td style={{ padding: 6 }}>{it.grv_records?.received_by || "-"}</td>
                 <td style={{ padding: 6, fontSize: 11, color: "#666" }}>
                   {it.grv_records?.po_no} / {it.grv_records?.grv_batch_no}
                 </td>
