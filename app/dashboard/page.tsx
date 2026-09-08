@@ -53,6 +53,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("booking_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [grvPoSet, setGrvPoSet] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -77,20 +78,50 @@ export default function DashboardPage() {
     if (ready) load();
   }, [ready, load]);
 
-  const totals = useMemo(
-    () =>
-      bookings.reduce(
-        (acc, b) => ({
-          pallets: acc.pallets + (b.pallets ?? 0),
-          skus: acc.skus + (b.skus ?? 0),
-          quantity: acc.quantity + (b.quantity ?? 0),
-          delivered: acc.delivered + (b.status === "Delivered" ? 1 : 0),
-          pending: acc.pending + (b.status === "Pending" ? 1 : 0),
-        }),
-        { pallets: 0, skus: 0, quantity: 0, delivered: 0, pending: 0 },
-      ),
-    [bookings],
-  );
+  // Check which bookings already have a matching GRV record
+  useEffect(() => {
+    async function loadGrvStatus() {
+      const poNumbers = bookings
+        .map((b) => b.po_number)
+        .filter((po): po is string => Boolean(po));
+
+      if (poNumbers.length === 0) {
+        setGrvPoSet(new Set());
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("grv_records")
+        .select("po_no")
+        .in("po_no", poNumbers);
+
+      if (!error && data) {
+        setGrvPoSet(new Set(data.map((r: any) => r.po_no)));
+      }
+    }
+    loadGrvStatus();
+  }, [bookings]);
+
+  const totals = useMemo(() => {
+    const base = bookings.reduce(
+      (acc, b) => ({
+        pallets: acc.pallets + (b.pallets ?? 0),
+        skus: acc.skus + (b.skus ?? 0),
+        quantity: acc.quantity + (b.quantity ?? 0),
+        delivered: acc.delivered + (b.status === "Delivered" ? 1 : 0),
+        pending: acc.pending + (b.status === "Pending" ? 1 : 0),
+      }),
+      { pallets: 0, skus: 0, quantity: 0, delivered: 0, pending: 0 },
+    );
+
+    const grvMissing = bookings.filter(
+      (b) =>
+        b.status === "Delivered" &&
+        (!b.po_number || !grvPoSet.has(b.po_number)),
+    ).length;
+
+    return { ...base, grvMissing };
+  }, [bookings, grvPoSet]);
 
   const sorted = useMemo(() => {
     const list = [...bookings];
@@ -132,7 +163,7 @@ export default function DashboardPage() {
           {bookings.length} booking{bookings.length === 1 ? "" : "s"} total
         </p>
 
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           {(
             [
               ["Bookings", bookings.length],
@@ -141,16 +172,25 @@ export default function DashboardPage() {
               ["Quantity", totals.quantity],
               ["Delivered", totals.delivered],
               ["Pending", totals.pending],
+              ["GRV Missing", totals.grvMissing],
             ] as [string, number][]
           ).map(([k, v]) => (
             <div
               key={k}
-              className="rounded-lg border border-slate-200 border-t-4 border-t-gold bg-white px-4 py-3 shadow-sm"
+              className={`rounded-lg border border-slate-200 border-t-4 bg-white px-4 py-3 shadow-sm ${
+                k === "GRV Missing" ? "border-t-red-500" : "border-t-gold"
+              }`}
             >
               <p className="text-xs uppercase tracking-wide text-slate-700">
                 {k}
               </p>
-              <p className="mt-1 font-mono text-2xl text-navy">{v}</p>
+              <p
+                className={`mt-1 font-mono text-2xl ${
+                  k === "GRV Missing" && v > 0 ? "text-red-600" : "text-navy"
+                }`}
+              >
+                {v}
+              </p>
             </div>
           ))}
         </div>
@@ -182,54 +222,73 @@ export default function DashboardPage() {
                       {sortKey === c.key && (sortDir === "asc" ? " ▲" : " ▼")}
                     </th>
                   ))}
+                  <th className="whitespace-nowrap px-3 py-2">GRV</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {sorted.map((b) => (
-                  <tr key={b.id} className="hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-3 py-2 font-mono">
-                      {b.ref}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      {b.booking_date}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono">
-                      {displayTime(b.booking_time)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono">
-                      {b.po_number || "-"}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      {b.supplier}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      {b.warehouse}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${typeBadge[b.type] ?? "bg-slate-100 text-slate-700"}`}
-                      >
-                        {b.type}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${statusBadge[b.status] ?? "bg-slate-100 text-slate-700"}`}
-                      >
-                        {b.status}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono">
-                      {b.pallets ?? 0}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono">
-                      {b.skus ?? 0}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono">
-                      {b.quantity ?? 0}
-                    </td>
-                  </tr>
-                ))}
+                {sorted.map((b) => {
+                  const hasGrv = b.po_number ? grvPoSet.has(b.po_number) : false;
+                  return (
+                    <tr key={b.id} className="hover:bg-slate-50">
+                      <td className="whitespace-nowrap px-3 py-2 font-mono">
+                        {b.ref}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {b.booking_date}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono">
+                        {displayTime(b.booking_time)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono">
+                        {b.po_number || "-"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {b.supplier}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {b.warehouse}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs font-medium ${typeBadge[b.type] ?? "bg-slate-100 text-slate-700"}`}
+                        >
+                          {b.type}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs font-medium ${statusBadge[b.status] ?? "bg-slate-100 text-slate-700"}`}
+                        >
+                          {b.status}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono">
+                        {b.pallets ?? 0}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono">
+                        {b.skus ?? 0}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono">
+                        {b.quantity ?? 0}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {b.status === "Delivered" ? (
+                          hasGrv ? (
+                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                              ✓
+                            </span>
+                          ) : (
+                            <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                              ✗
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-xs text-slate-400">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
