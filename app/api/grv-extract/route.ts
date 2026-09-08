@@ -64,6 +64,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
+    // Check if this exact filename has already been processed
+    const { data: existingByFilename } = await supabase
+      .from("grv_records")
+      .select("id, po_no, grv_batch_no")
+      .eq("source_filename", file.name)
+      .maybeSingle();
+
+    if (existingByFilename) {
+      return NextResponse.json(
+        {
+          error: `This file was already uploaded (PO ${existingByFilename.po_no || "-"} / GRV ${existingByFilename.grv_batch_no || "-"}). Skipped to avoid duplicate.`,
+        },
+        { status: 409 }
+      );
+    }
+
     const bytes = await file.arrayBuffer();
     const base64 = Buffer.from(bytes).toString("base64");
 
@@ -95,6 +111,26 @@ export async function POST(req: NextRequest) {
 
     const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
     const extracted = JSON.parse(cleaned);
+
+    // Also check by PO number + GRV batch number, in case the same document
+    // was uploaded under a different filename
+    if (extracted.po_no && extracted.grv_batch_no) {
+      const { data: existingByPo } = await supabase
+        .from("grv_records")
+        .select("id")
+        .eq("po_no", extracted.po_no)
+        .eq("grv_batch_no", extracted.grv_batch_no)
+        .maybeSingle();
+
+      if (existingByPo) {
+        return NextResponse.json(
+          {
+            error: `A GRV with PO ${extracted.po_no} / batch ${extracted.grv_batch_no} already exists. Skipped to avoid duplicate.`,
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     // Insert GRV record
     const { data: grvRecord, error: grvError } = await supabase
