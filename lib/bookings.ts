@@ -43,9 +43,30 @@ async function nextRefs(): Promise<{ ref: string; df_ref: string }> {
   return data as { ref: string; df_ref: string };
 }
 
+/** Writes one entry to audit_logs. Never blocks the main action if logging fails. */
+async function logAudit(
+  action: "insert" | "update" | "delete",
+  recordId: string | null,
+  changedData: unknown
+): Promise<void> {
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    await supabase.from("audit_logs").insert({
+      table_name: "bookings",
+      record_id: recordId,
+      action,
+      user_id: userData?.user?.id ?? null,
+      user_email: userData?.user?.email ?? null,
+      changed_data: changedData,
+    });
+  } catch (err) {
+    // Logging must never break the actual booking operation
+    console.error("Audit log failed:", err);
+  }
+}
+
 /** Validates booking input before it ever reaches the database. */
 function validateBookingInput(input: Partial<BookingInput>): void {
-  // booking_date must be present and a valid YYYY-MM-DD date
   if (input.booking_date !== undefined) {
     if (!input.booking_date || typeof input.booking_date !== "string") {
       throw new Error("Booking date is required.");
@@ -60,7 +81,6 @@ function validateBookingInput(input: Partial<BookingInput>): void {
     }
   }
 
-  // booking_time, if provided, must be HH:MM (or HH:MM:SS) format
   if (input.booking_time) {
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)(:([0-5]\d))?$/;
     if (!timeRegex.test(input.booking_time)) {
@@ -68,29 +88,24 @@ function validateBookingInput(input: Partial<BookingInput>): void {
     }
   }
 
-  // supplier is required (it's a plain name string, not a foreign key here)
   if (input.supplier !== undefined) {
     if (!input.supplier || typeof input.supplier !== "string" || input.supplier.trim() === "") {
       throw new Error("Supplier is required.");
     }
   }
 
-  // type must be one of the allowed enum values
   if (input.type !== undefined && !BOOKING_TYPES.includes(input.type)) {
     throw new Error(`Type must be one of: ${BOOKING_TYPES.join(", ")}.`);
   }
 
-  // status must be one of the allowed enum values
   if (input.status !== undefined && !BOOKING_STATUSES.includes(input.status)) {
     throw new Error(`Status must be one of: ${BOOKING_STATUSES.join(", ")}.`);
   }
 
-  // warehouse must be one of the allowed enum values
   if (input.warehouse !== undefined && !WAREHOUSES.includes(input.warehouse)) {
     throw new Error(`Warehouse must be one of: ${WAREHOUSES.join(", ")}.`);
   }
 
-  // pallets, skus, quantity — if provided, must be non-negative numbers
   const numericFields: (keyof BookingInput)[] = ["pallets", "skus", "quantity"];
   for (const field of numericFields) {
     const value = (input as any)[field];
@@ -116,6 +131,9 @@ export async function createBooking(input: BookingInput): Promise<Booking> {
     .single();
 
   if (error) throw error;
+
+  await logAudit("insert", data.id, data);
+
   return data as Booking;
 }
 
@@ -133,6 +151,9 @@ export async function updateBooking(
     .single();
 
   if (error) throw error;
+
+  await logAudit("update", id, patch);
+
   return data as Booking;
 }
 
@@ -143,6 +164,8 @@ export async function markDelivered(id: string): Promise<Booking> {
 export async function deleteBooking(id: string): Promise<void> {
   const { error } = await supabase.from("bookings").delete().eq("id", id);
   if (error) throw error;
+
+  await logAudit("delete", id, null);
 }
 
 export async function getBlockedDates(): Promise<string[]> {
