@@ -16,6 +16,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY! // use service role on the server only
 );
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
 const EXTRACTION_PROMPT = `You are reading a scanned Tourvest Goods Received Voucher (GRV) PDF, possibly with an attached supplier delivery note.
 
 Extract the data and return ONLY valid JSON (no markdown, no explanation) in exactly this shape:
@@ -62,6 +64,30 @@ export async function POST(req: NextRequest) {
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    // File type validation — only PDFs allowed
+    if (file.type !== "application/pdf") {
+      return NextResponse.json(
+        { error: "Only PDF files are allowed." },
+        { status: 400 }
+      );
+    }
+
+    // Empty file check
+    if (file.size === 0) {
+      return NextResponse.json(
+        { error: "The uploaded file is empty." },
+        { status: 400 }
+      );
+    }
+
+    // File size validation — max 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "File is too large. Maximum size is 10MB." },
+        { status: 400 }
+      );
     }
 
     // Check if this exact filename has already been processed
