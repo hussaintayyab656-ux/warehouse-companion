@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useRequireAuth } from "@/lib/useAuth";
@@ -31,9 +31,56 @@ type EventItem = {
   event_date: string;
 };
 
+type KpiSummary = {
+  totalBookings: number;
+  totalPallets: number;
+  deliveredPct: number;
+  avgPallets: string;
+};
+
+function KpiStrip({ kpi }: { kpi: KpiSummary | null }) {
+  if (!kpi) return null;
+
+  const cards = [
+    { label: "TOTAL BOOKINGS", value: kpi.totalBookings.toString() },
+    { label: "TOTAL PALLETS", value: kpi.totalPallets.toString() },
+    { label: "DELIVERED", value: `${kpi.deliveredPct}%` },
+    { label: "AVG PALLETS / BOOKING", value: kpi.avgPallets },
+  ];
+
+  return (
+    <div className="mx-auto max-w-4xl px-4 pt-8 sm:px-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {cards.map((c) => (
+          <div
+            key={c.label}
+            className="rounded-lg border border-[#ffb000]/20 bg-[#111] px-4 py-3 text-center"
+          >
+            <p className="font-mono text-[9px] tracking-[0.15em] text-slate-500">
+              {c.label}
+            </p>
+            <p className="mt-1 font-mono text-xl font-bold text-[#ffb000] sm:text-2xl">
+              {c.value}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex justify-center">
+        <Link
+          href="/analytics"
+          className="font-mono text-[10px] tracking-[0.2em] text-slate-500 hover:text-[#ffb000]"
+        >
+          VIEW FULL ANALYTICS →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const { checking, role } = useRequireAuth();
   const [todaysEvents, setTodaysEvents] = useState<EventItem[]>([]);
+  const [kpi, setKpi] = useState<KpiSummary | null>(null);
 
   useEffect(() => {
     async function loadEvents() {
@@ -46,6 +93,28 @@ export default function HomePage() {
     }
     loadEvents();
   }, []);
+
+  const loadKpi = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("bookings")
+      .select("pallets, status");
+
+    if (error || !data) return;
+
+    const totalBookings = data.length;
+    const totalPallets = data.reduce((sum, b) => sum + (b.pallets ?? 0), 0);
+    const delivered = data.filter((b) => b.status === "Delivered").length;
+    const deliveredPct =
+      totalBookings > 0 ? Math.round((delivered / totalBookings) * 100) : 0;
+    const avgPallets =
+      totalBookings > 0 ? (totalPallets / totalBookings).toFixed(1) : "0";
+
+    setKpi({ totalBookings, totalPallets, deliveredPct, avgPallets });
+  }, []);
+
+  useEffect(() => {
+    loadKpi();
+  }, [loadKpi]);
 
   if (checking) return null;
 
@@ -111,6 +180,8 @@ export default function HomePage() {
           SELECT A MODULE BELOW
         </p>
       </div>
+
+      {role !== "limited" && <KpiStrip kpi={kpi} />}
 
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
         <div className="grid grid-cols-[1fr_auto] gap-x-4 border-b border-[#ffb000]/20 pb-2 font-mono text-[10px] tracking-[0.2em] text-slate-500 sm:grid-cols-[1fr_180px_100px]">
